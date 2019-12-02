@@ -8,7 +8,8 @@
 
 package org.veriblock.alt.plugins
 
-import com.github.kittinunf.fuel.httpPost
+import io.ktor.client.request.post
+import kotlinx.coroutines.runBlocking
 import org.veriblock.sdk.AltPublication
 import org.veriblock.sdk.Configuration
 import org.veriblock.sdk.PublicationData
@@ -55,17 +56,19 @@ private class BtcBlockData(
     val header: String
 )
 
-private fun getInfo(): VbkInfo = config.host.httpPost()
-    .body(JsonRpcRequestBody("getinfo", Any()).toJson())
-    .rpcResponse()
+private val httpClient = createHttpClient()
 
-private fun getLastBitcoinBlockHash() = config.host.httpPost()
-    .body(JsonRpcRequestBody("getlastbitcoinblock", Any()).toJson())
-    .rpcResponse<BtcBlockData>().hash
+private suspend fun getInfo(): VbkInfo = httpClient.post<RpcResponse>(config.host) {
+    body = JsonRpcRequestBody("getinfo", Any()).toJson()
+}.handle<VbkInfo>()
 
-private fun getLastBlockHash() = config.host.httpPost()
-    .body(JsonRpcRequestBody("getlastblock", Any()).toJson())
-    .rpcResponse<BlockHeaderContainer>().header.hash
+private suspend fun getLastBitcoinBlockHash() = httpClient.post<RpcResponse>(config.host) {
+    body = JsonRpcRequestBody("getlastbitcoinblock", Any()).toJson()
+}.handle<BtcBlockData>().hash
+
+private suspend fun getLastBlockHash() = httpClient.post<RpcResponse>(config.host) {
+    body = JsonRpcRequestBody("getlastblock", Any()).toJson()
+}.handle<BlockHeaderContainer>().header.hash
 
 @PluginSpec(name = "Test", key = "test")
 class TestChain : SecurityInheritingChain {
@@ -88,7 +91,7 @@ class TestChain : SecurityInheritingChain {
         return (System.currentTimeMillis() / 10000).toInt() // "New block" every 10 seconds
     }
 
-    override fun getPublicationData(blockHeight: Int?): PublicationDataWithContext {
+    override fun getPublicationData(blockHeight: Int?): PublicationDataWithContext = runBlocking {
         logger.debug { "Retrieving last known blocks from NodeCore at ${config.host}..." }
         val lastVbkHash = getLastBlockHash().asHexBytes()
         val lastBtcHash = getLastBitcoinBlockHash().asHexBytes()
@@ -102,7 +105,7 @@ class TestChain : SecurityInheritingChain {
             Base58.decode("VFMJSUgJCy9QRa1RjXNmJ5kLy5D35C"),
             context
         )
-        return PublicationDataWithContext(publicationData, listOf(lastVbkHash), listOf(lastBtcHash))
+        PublicationDataWithContext(publicationData, listOf(lastVbkHash), listOf(lastBtcHash))
     }
 
     override fun submit(proofOfProof: AltPublication, veriBlockPublications: List<VeriBlockPublication>): String {

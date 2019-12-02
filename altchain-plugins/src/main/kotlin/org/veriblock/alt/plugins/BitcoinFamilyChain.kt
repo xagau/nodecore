@@ -8,9 +8,8 @@
 
 package org.veriblock.alt.plugins
 
-import com.github.kittinunf.fuel.core.Request
-import com.github.kittinunf.fuel.core.extensions.authentication
-import com.github.kittinunf.fuel.httpPost
+import io.ktor.client.request.post
+import kotlinx.coroutines.runBlocking
 import org.veriblock.sdk.AltPublication
 import org.veriblock.sdk.Configuration
 import org.veriblock.sdk.PublicationData
@@ -28,8 +27,7 @@ private val logger = createLogger {}
 
 class BtcConfig(
     val host: String = "http://localhost:8332",
-    val username: String? = null,
-    val password: String? = null,
+    val auth: HttpAuthConfig? = null,
     val autoMine: BtcAutoMineConfig? = null
 )
 
@@ -56,11 +54,7 @@ class BitcoinFamilyChain(
 
     private val config = Configuration.extract("securityInheriting.$key") ?: BtcConfig()
 
-    private fun Request.authenticate() = if (config.username != null && config.password != null) {
-        authentication().basic(config.username, config.password)
-    } else {
-        this
-    }
+    private val httpClient = createHttpClient(config.auth)
 
     override fun getChainIdentifier(): Long {
         return id
@@ -81,26 +75,24 @@ class BitcoinFamilyChain(
         )
     }
 
-    override fun getBestBlockHeight(): Int {
+    override fun getBestBlockHeight(): Int = runBlocking {
         logger.info { "Retrieving best block height..." }
         val jsonBody = JsonRpcRequestBody("getblockcount").toJson()
-        return config.host.httpPost()
-            .authenticate()
-            .body(jsonBody)
-            .rpcResponse()
+        httpClient.post<RpcResponse>(config.host) {
+            body = jsonBody
+        }.handle<Int>()
     }
 
-    override fun getPublicationData(blockHeight: Int?): PublicationDataWithContext {
+    override fun getPublicationData(blockHeight: Int?): PublicationDataWithContext = runBlocking {
         val actualBlockHeight = blockHeight
             // Retrieve top block height from API if not supplied
             ?: getBestBlockHeight()
 
         logger.info { "Retrieving publication data at height $actualBlockHeight from $key daemon at ${config.host}..." }
         val jsonBody = JsonRpcRequestBody("getpopdata", listOf(actualBlockHeight)).toJson()
-        val response: BtcPublicationData = config.host.httpPost()
-            .authenticate()
-            .body(jsonBody)
-            .rpcResponse()
+        val response: BtcPublicationData = httpClient.post<RpcResponse>(config.host) {
+            body = jsonBody
+        }.handle()
 
         val publicationData = PublicationData(
             getChainIdentifier(),
@@ -111,19 +103,22 @@ class BitcoinFamilyChain(
         if (response.last_known_veriblock_blocks.isEmpty()) {
             error("Publication data's context (last known VeriBlock blocks) must not be empty!")
         }
-        return PublicationDataWithContext(publicationData, response.last_known_veriblock_blocks.map { it.asHexBytes() }, response.last_known_bitcoin_blocks.map { it.asHexBytes() })
+        PublicationDataWithContext(
+            publicationData,
+            response.last_known_veriblock_blocks.map { it.asHexBytes() },
+            response.last_known_bitcoin_blocks.map { it.asHexBytes() }
+        )
     }
 
-    override fun submit(proofOfProof: AltPublication, veriBlockPublications: List<VeriBlockPublication>): String {
+    override fun submit(proofOfProof: AltPublication, veriBlockPublications: List<VeriBlockPublication>): String = runBlocking {
         logger.info { "Submitting PoP and VeriBlock publications to $key daemon at ${config.host}..." }
         val jsonBody = JsonRpcRequestBody("submitpop", listOf(
             SerializeDeserializeService.serialize(proofOfProof).toHex(),
             veriBlockPublications.map { SerializeDeserializeService.serialize(it).toHex() }
         )).toJson()
 
-        return config.host.httpPost()
-                .authenticate()
-                .body(jsonBody)
-                .rpcResponse()
+        httpClient.post<String>(config.host) {
+            body = jsonBody
+        }
     }
 }
