@@ -29,7 +29,6 @@ import org.bitcoinj.core.Address;
 import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.ECKey;
 import org.bitcoinj.core.InsufficientMoneyException;
-import org.bitcoinj.core.ScriptException;
 import org.bitcoinj.core.Transaction;
 import org.bitcoinj.core.TransactionConfidence;
 import org.bitcoinj.core.TransactionInput;
@@ -279,7 +278,7 @@ public class WalletShim {
                     checkNotNull(redeemScript, "Coin selection includes unspendable outputs");
                 }
                 size += script.getNumberOfBytesRequiredToSpend(key, redeemScript);
-            } catch (ScriptException e) {
+            } catch (Exception e) {
                 // If this happens it means an output script in a wallet tx could not be understood. That should never
                 // happen, if it does it means the wallet has got into an inconsistent state.
                 throw new IllegalStateException(e);

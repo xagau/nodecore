@@ -46,6 +46,8 @@ import org.bitcoinj.core.listeners.BlocksDownloadedEventListener;
 import org.bitcoinj.core.listeners.DownloadProgressTracker;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.bitcoinj.kits.WalletAppKit;
+import org.bitcoinj.net.BlockingClientManager;
+import org.bitcoinj.net.ClientConnectionManager;
 import org.bitcoinj.params.RegTestParams;
 import org.bitcoinj.script.Script;
 import org.bitcoinj.script.ScriptBuilder;
@@ -61,6 +63,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -145,8 +148,27 @@ public final class BitcoinService implements BlocksDownloadedEventListener {
         isBlockchainDownloaded = false;
 
         BitcoinService self = this;
+        WalletAppKit kit = new WalletAppKit(context.getParams(), new File("."), filePrefix) {
+            protected PeerGroup createPeerGroup() {
+                if (context.getParams().getId().equalsIgnoreCase("org.bitcoin.regtest")) {
+                    final BlockingClientManager connectionManager = new BlockingClientManager();
+                    connectionManager.setConnectTimeoutMillis(50000);
+                    final PeerGroup peerGroup = new PeerGroup(this.params, (AbstractBlockChain) this.vChain, (ClientConnectionManager) connectionManager);
+                    peerGroup.setUseLocalhostPeerWhenPossible(configuration.isBitcoinUseLocalhostPeer());
 
-        WalletAppKit kit = new WalletAppKit(context, new File("."), filePrefix) {
+                    PeerAddress addr = null;
+                    try {
+                        addr = new PeerAddress(this.params, InetAddress.getByName("127.0.0.1"), 18444);
+                    } catch (UnknownHostException e) {
+                        e.printStackTrace();
+                    }
+                    peerGroup.addAddress(addr);
+                    return peerGroup;
+                } else {
+                    return new PeerGroup(params, vChain);
+                }
+            }
+
             @Override
             protected void onSetupCompleted() {
                 super.onSetupCompleted();
@@ -156,8 +178,6 @@ public final class BitcoinService implements BlocksDownloadedEventListener {
                 wallet.setAcceptRiskyTransactions(true);
                 blockChain = this.chain();
                 peerGroup = this.peerGroup();
-
-                peerGroup.setUseLocalhostPeerWhenPossible(configuration.isBitcoinUseLocalhostPeer());
 
                 wallet.addCoinsReceivedEventListener((wallet, tx, prevBalance, newBalance) -> InternalEventBus.getInstance()
                         .post(new CoinsReceivedEvent(tx, prevBalance, newBalance)));
@@ -423,7 +443,7 @@ public final class BitcoinService implements BlocksDownloadedEventListener {
     public Transaction sendCoins(String address, Coin amount) throws SendTransactionException {
         try {
             return sendTxRequest(() -> {
-                SendRequest sendRequest = SendRequest.to(Address.fromBase58(kit.params(), address), amount);
+                SendRequest sendRequest = SendRequest.to(LegacyAddress.fromBase58(kit.params(), address), amount);
                 sendRequest.changeAddress = wallet.currentChangeAddress();
                 sendRequest.feePerKb = getTransactionFeePerKB();
 
