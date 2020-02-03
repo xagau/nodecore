@@ -34,6 +34,7 @@ import org.bitcoinj.core.BlockChain;
 import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.Context;
 import org.bitcoinj.core.FilteredBlock;
+import org.bitcoinj.core.LegacyAddress;
 import org.bitcoinj.core.PartialMerkleTree;
 import org.bitcoinj.core.Peer;
 import org.bitcoinj.core.PeerAddress;
@@ -47,8 +48,6 @@ import org.bitcoinj.core.listeners.DownloadProgressTracker;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.bitcoinj.kits.WalletAppKit;
 import org.bitcoinj.net.BlockingClientManager;
-import org.bitcoinj.net.ClientConnectionManager;
-import org.bitcoinj.params.RegTestParams;
 import org.bitcoinj.script.Script;
 import org.bitcoinj.script.ScriptBuilder;
 import org.bitcoinj.script.ScriptOpCodes;
@@ -153,7 +152,7 @@ public final class BitcoinService implements BlocksDownloadedEventListener {
                 if (context.getParams().getId().equalsIgnoreCase("org.bitcoin.regtest")) {
                     final BlockingClientManager connectionManager = new BlockingClientManager();
                     connectionManager.setConnectTimeoutMillis(50000);
-                    final PeerGroup peerGroup = new PeerGroup(this.params, (AbstractBlockChain) this.vChain, (ClientConnectionManager) connectionManager);
+                    final PeerGroup peerGroup = new PeerGroup(this.params, this.vChain, connectionManager);
                     peerGroup.setUseLocalhostPeerWhenPossible(configuration.isBitcoinUseLocalhostPeer());
 
                     PeerAddress addr = null;
